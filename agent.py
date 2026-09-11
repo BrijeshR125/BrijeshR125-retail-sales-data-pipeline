@@ -12,12 +12,19 @@ everything else (prompting, safety checks, summarization) stays the same.
 """
 import os
 import re
-import sqlite3
+import psycopg2
 import pandas as pd
 from anthropic import Anthropic
 
 MODEL = "claude-sonnet-4-5"  # swap model name as needed
-DB_PATH = "sales_demo.db"
+
+PG_CONFIG = dict(
+    host=os.environ.get("PGHOST", "localhost"),
+    port=os.environ.get("PGPORT", "5432"),
+    dbname=os.environ.get("PGDATABASE", "postgres"),
+    user=os.environ.get("PGUSER", "postgres"),
+    password=os.environ.get("PGPASSWORD", "admin12345"),
+)
 
 client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
 
@@ -27,17 +34,19 @@ Tables:
 - dim_product(product_id, product_name, category, unit_price)
 - dim_customer(customer_id, city, state)
 - dim_date(date_id, day, month, year)
+- customer_segments(customer_id, total_revenue, segment)
 
 date_id format is YYYYMMDD (text). Join fact_sales to dimension tables on the
-matching *_id columns.
+matching *_id columns. customer_segments is a derived table with segment
+values 'High', 'Medium', or 'Low'.
 """
 
-BLOCKED_KEYWORDS = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "ATTACH", "PRAGMA"]
+BLOCKED_KEYWORDS = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "TRUNCATE", "GRANT", "REVOKE"]
 
 
 def generate_sql(question: str) -> str:
     """Ask Claude to turn a natural-language question into a SQL query."""
-    prompt = f"""You are a SQL generator for a SQLite sales database.
+    prompt = f"""You are a SQL generator for a PostgreSQL sales database.
 
 {SCHEMA_DESCRIPTION}
 
@@ -47,7 +56,7 @@ Write a single SQL SELECT query that answers this question:
 Rules:
 - Return ONLY the SQL query, no explanation, no markdown formatting, no backticks.
 - Only generate SELECT statements. Never modify data.
-- Use standard SQLite syntax.
+- Use standard PostgreSQL syntax.
 """
     response = client.messages.create(
         model=MODEL,
@@ -69,9 +78,9 @@ def is_safe_sql(sql: str) -> bool:
 
 
 def run_sql(sql: str) -> pd.DataFrame:
-    """Execute SQL against the demo SQLite DB. Replace with a Redshift/Postgres
-    connection (e.g. psycopg2 / redshift_connector) when you move off SQLite."""
-    conn = sqlite3.connect(DB_PATH)
+    """Execute SQL against the PostgreSQL warehouse. Swap PG_CONFIG for a
+    Redshift connection (e.g. redshift_connector) if you move to Redshift later."""
+    conn = psycopg2.connect(**PG_CONFIG)
     try:
         df = pd.read_sql_query(sql, conn)
     finally:
