@@ -1,0 +1,14 @@
+# Local database files
+sales_demo.db
+*.db
+
+# Environment variables / secrets
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS-specific
+.DS_Store
+Thumbs.db
